@@ -1,10 +1,6 @@
-name: Makefile CI
+name: Compile SQLite3
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
@@ -13,9 +9,9 @@ jobs:
 
     steps:
     - name: Setup Android NDK
-      uses: nttld/setup-ndk@v1.2.0
+      uses: nttld/setup-ndk@v1.5.0
       with:
-        ndk-version: r25b
+        ndk-version: r28
 
     - name: Checkout code
       uses: actions/checkout@v3
@@ -24,7 +20,7 @@ jobs:
       run: make
 
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3.1.2
+      uses: actions/upload-artifact@v4
       with:
         path: |
           libs
