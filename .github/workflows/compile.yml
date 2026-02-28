@@ -2,6 +2,12 @@ name: Compile SQLite3
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -16,13 +22,94 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Run make
+    - name: Run make (download/unpack amalgamation)
       run: make
 
-    - name: Upload build artifacts
+    - name: Build (ndk-build)
+      run: ndk-build
+
+    - name: Determine VERSION and TAG (prefer pushed tag; fallback to SQLITE_VERSION)
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # If triggered by pushing a tag, prefer that.
+        if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]] && [[ -n "${GITHUB_REF_NAME:-}" ]]; then
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "Using pushed tag: ${TAG}"
+        else
+          SQLITE_VERSION="$(grep -E '^[[:space:]]*SQLITE_VERSION[[:space:]]*\?=' Makefile | awk '{print $3}')"
+          # Expecting 7 digits: 3MMmmpp (e.g., 3510200 -> 3.51.2)
+          if [[ ! "$SQLITE_VERSION" =~ ^[0-9]{7}$ ]]; then
+            echo "Unexpected SQLITE_VERSION format: $SQLITE_VERSION"
+            exit 1
+          fi
+          major="${SQLITE_VERSION:0:1}"
+          minor="${SQLITE_VERSION:1:2}"
+          patch="${SQLITE_VERSION:3:2}"
+          patch="$((10#$patch))"
+          VERSION="${major}.${minor}.${patch}"
+          TAG="v${VERSION}"
+          echo "Computed tag from Makefile: ${TAG}"
+        fi
+
+        echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+        echo "TAG=${TAG}" >> "$GITHUB_ENV"
+
+    - name: Package release zips (arm64-v8a, x86_64)
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        rm -rf dist
+        mkdir -p dist
+
+        package_abi () {
+          local abi="$1"
+          local outdir="dist/sqlite3-android-${VERSION}-${abi}"
+          mkdir -p "${outdir}/static" "${outdir}/dynamic"
+
+          # Libraries
+          cp "libs/${abi}/libsqlite3.a"  "${outdir}/static/"
+          cp "libs/${abi}/libsqlite3.so" "${outdir}/dynamic/"
+
+          # Executables (can land in libs/<abi>/ or obj/local/<abi>/ depending on ndk-build behavior)
+          if [[ -f "libs/${abi}/sqlite3-static" ]]; then
+            cp "libs/${abi}/sqlite3-static" "${outdir}/static/"
+          else
+            cp "obj/local/${abi}/sqlite3-static" "${outdir}/static/"
+          fi
+
+          if [[ -f "libs/${abi}/sqlite3-dynamic" ]]; then
+            cp "libs/${abi}/sqlite3-dynamic" "${outdir}/dynamic/"
+          else
+            cp "obj/local/${abi}/sqlite3-dynamic" "${outdir}/dynamic/"
+          fi
+
+          (cd dist && zip -qr "sqlite3-android-${VERSION}-${abi}.zip" "sqlite3-android-${VERSION}-${abi}")
+        }
+
+        package_abi arm64-v8a
+        package_abi x86_64
+
+        ls -la dist/*.zip
+
+    - name: Upload build artifacts (CI)
       uses: actions/upload-artifact@v4
       with:
         path: |
+          dist/*.zip
           libs
           obj/local/*/*.a
         if-no-files-found: error
+
+    - name: Create or update GitHub Release and upload assets
+      uses: ncipollo/release-action@v1
+      with:
+        tag: ${{ env.TAG }}
+        name: SQLite3-Android ${{ env.VERSION }}
+        artifacts: dist/*.zip
+        allowUpdates: true
+        replacesArtifacts: true
+        generateReleaseNotes: true
