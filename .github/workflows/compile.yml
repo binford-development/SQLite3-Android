@@ -31,15 +31,6 @@ jobs:
         APP_ABI="arm64-v8a x86_64" \
         NDK_APPLICATION_MK=jni/Application.mk
 
-    - name: Inspect outputs
-      shell: bash
-      run: |
-        set -euo pipefail
-        echo "== find libs =="
-        find libs -maxdepth 4 -type f -print || true
-        echo "== find obj/local =="
-        find obj/local -maxdepth 5 -type f -print || true
-
     - name: Determine VERSION and TAG (prefer pushed tag; fallback to SQLITE_VERSION)
       shell: bash
       run: |
@@ -83,30 +74,11 @@ jobs:
           mkdir -p "${outdir}/static" "${outdir}/dynamic"
 
           # Libraries
-          if [[ -f "libs/${abi}/libsqlite3.a" ]]; then
-            cp "libs/${abi}/libsqlite3.a" "${outdir}/static/"
-          else
-            cp "obj/local/${abi}/libsqlite3.a" "${outdir}/static/"
-          fi
-
-          if [[ -f "libs/${abi}/libsqlite3.so" ]]; then
-            cp "libs/${abi}/libsqlite3.so" "${outdir}/dynamic/"
-          else
-            cp "obj/local/${abi}/libsqlite3.so" "${outdir}/dynamic/"
-          fi
-
-          # Executables (can land in libs/<abi>/ or obj/local/<abi>/ depending on ndk-build behavior)
-          if [[ -f "libs/${abi}/sqlite3-static" ]]; then
-            cp "libs/${abi}/sqlite3-static" "${outdir}/static/"
-          else
-            cp "obj/local/${abi}/sqlite3-static" "${outdir}/static/"
-          fi
-
-          if [[ -f "libs/${abi}/sqlite3-dynamic" ]]; then
-            cp "libs/${abi}/sqlite3-dynamic" "${outdir}/dynamic/"
-          else
-            cp "obj/local/${abi}/sqlite3-dynamic" "${outdir}/dynamic/"
-          fi
+          cp "obj/local/${abi}/libsqlite3.a" "${outdir}/static/"
+          cp "libs/${abi}/libsqlite3.so" "${outdir}/dynamic/"
+          
+          cp "libs/${abi}/sqlite3-static" "${outdir}/static/"
+          cp "libs/${abi}/sqlite3-dynamic" "${outdir}/dynamic/"
 
           (cd dist && zip -qr "sqlite3-android-${VERSION}-${abi}.zip" "sqlite3-android-${VERSION}-${abi}")
         }
@@ -129,7 +101,7 @@ jobs:
       uses: ncipollo/release-action@v1
       with:
         tag: ${{ env.TAG }}
-        name: SQLite3-Android ${{ env.VERSION }}
+        name: SQLite3-Android ${{ env.TAG }}
         artifacts: dist/*.zip
         allowUpdates: true
         replacesArtifacts: true
